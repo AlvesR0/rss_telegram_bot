@@ -1,40 +1,48 @@
+name: Rust
 on: [push, pull_request]
 
-name: Rust
-
 jobs:
-  lint:
-    name: Build & lint
+  build:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout sources
-      uses: actions/checkout@v2
+      - uses: actions/checkout@v2
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+  
+  lints:
+    name: Lints
+    runs-on: ubuntu-latest
 
-    - name: Install rust
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
-        components: rust-src, rustfmt, clippy
-        
-    - name: Install xbuild
-      uses: actions-rs/install@v0.1
-      with:
-        crate: cargo-xbuild
-        version: latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
 
-    - name: Install system dependencies
-      run: sudo apt update
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+     
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
 
-    - name: Check formatting
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: --all -- --check
-
-    - name: Clippy
-      run: make clippy
-
-    - name: Build
-      run: make all
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings 
