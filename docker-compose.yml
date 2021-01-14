@@ -1,0 +1,9 @@
+version: "3.7"
+services:
+  rss_telegram_bot:
+    build: .
+    env_file:
+        - .env
+    volumes:
+      - ./sources:/app/sources
+
