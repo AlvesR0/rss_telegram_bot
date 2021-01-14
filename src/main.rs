@@ -36,7 +36,7 @@ async fn reply(message: &str, sender: &User) -> String {
     let space_index = message
         .chars()
         .position(|c| c == ' ')
-        .unwrap_or(message.len());
+        .unwrap_or_else(|| message.len());
     let (left, right) = message.split_at(space_index);
     let right = right.trim();
     /* commands to botfather:
