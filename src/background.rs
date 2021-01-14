@@ -43,13 +43,24 @@ async fn notifier(token: String) {
             };
 
             let mut state = RssState::load(user_id, pin).unwrap();
-            let notifications = get_rss(&mut state).await.unwrap();
+            let notifications = match get_rss(&mut state).await {
+                Ok(notifications) => notifications,
+                Err(e) => {
+                    eprintln!("Could not load RSS feed at {}", state.url);
+                    eprintln!("{:?}", e);
+                    continue;
+                }
+            };
 
             for notification in notifications {
                 let message = notification.format(pin, &state);
-                api.send(SendMessage::new(UserId::new(state.send_to), message))
+                if let Err(e) = api
+                    .send(SendMessage::new(UserId::new(state.send_to), message))
                     .await
-                    .unwrap();
+                {
+                    eprintln!("Could not send notification to user {}", state.send_to);
+                    eprintln!("{:?}", e);
+                }
             }
             state.save(user_id, pin);
         }

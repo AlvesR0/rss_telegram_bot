@@ -24,9 +24,13 @@ async fn main() {
         if let UpdateKind::Message(message) = update.kind {
             if let MessageKind::Text { ref data, .. } = message.kind {
                 let reply_message = reply(data, &message.from).await;
-                api.send(SendMessage::new(message.from, reply_message))
+                if let Err(e) = api
+                    .send(SendMessage::new(&message.from, reply_message))
                     .await
-                    .unwrap();
+                {
+                    eprintln!("Could not reply to user {:?}", message.from);
+                    eprintln!("{:?}", e);
+                }
             }
         }
     }
