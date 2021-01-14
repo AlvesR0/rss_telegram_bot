@@ -30,8 +30,6 @@ RUN apk update
 RUN apk upgrade
 RUN apk add ca-certificates
 
-EXPOSE 8000
-
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/rss_telegram_bot .
 
 CMD ["./rss_telegram_bot"]

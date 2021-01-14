@@ -55,6 +55,7 @@ async fn reply(message: &str, sender: &User) -> String {
         "/edit" => edit(sender, right).await,
         "/delete" => delete(sender, right),
         "/show" => show(sender, right).await,
+        "/source" | "/github" => "https://github.com/VictorKoenders/rss_telegram_bot".to_owned(),
         _ => "Unknown command.\nyou can list your rss feeds by typing /list.\nYou can add a new rss feed by typing /add <RSS url>".to_owned()
     }
 }
