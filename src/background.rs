@@ -1,6 +1,7 @@
+use crate::{RssNotification, RssState};
 use lazy_static::lazy_static;
 use std::time::{Duration, Instant};
-use telegram_bot::;
+use telegram_bot::{Api, SendMessage, UserId};
 use tokio::sync::RwLock;
 
 pub fn spawn(token: String) {
@@ -13,9 +14,14 @@ lazy_static! {
 
 const NOTIFY_INTERVAL: Duration = Duration::from_secs(3600);
 
-pub async fn time_until_next_update() -> Duration {
+pub async fn time_until_next_update() -> String {
     let elapsed = LAST_UPDATE_TIME.read().await.elapsed();
-    NOTIFY_INTERVAL - elapsed
+    let time = NOTIFY_INTERVAL - elapsed;
+    if time > Duration::from_secs(60) {
+        format!("{} minutes", time.as_secs() / 60)
+    } else {
+        format!("{} seconds", time.as_secs())
+    }
 }
 
 async fn notifier(token: String) {
@@ -25,40 +31,27 @@ async fn notifier(token: String) {
         for name in std::fs::read_dir("sources").unwrap() {
             let name = name.unwrap().file_name();
             let name = name.to_str().unwrap();
-            let (_user_id, pin): (i64, i32) = if let Some(name) = name.strip_suffix(".json") {
-                let mut split = name.split('-');
-                if let (Some(user_id), Some(pin)) = (
-                    split.next().and_then(|id| id.parse().ok()),
-                    split.next().and_then(|id| id.parse().ok()),
-                ) {
-                    (user_id, pin)
-                } else {
-                    (0, 0)
+            let (user_id, pin) = match crate::data::get_user_id_and_pin_from_name(name) {
+                Some(v) => v,
+                None => {
+                    println!(
+                        "Warning: Could not load user id and pin from name {:?}",
+                        name
+                    );
+                    continue;
                 }
-            } else {
-                (0, 0)
             };
 
-            let mut state = RssState::load(name).unwrap();
+            let mut state = RssState::load(user_id, pin).unwrap();
             let notifications = get_rss(&mut state).await.unwrap();
 
             for notification in notifications {
-                let content = state
-                    .extract_content
-                    .extract(&notification.content)
-                    .unwrap_or(&notification.content);
-                let message = format!(
-                    "[{pin}] {title}\n{content}\n{url}",
-                    pin = pin,
-                    title = notification.title,
-                    content = content,
-                    url = notification.url
-                );
+                let message = notification.format(pin, &state);
                 api.send(SendMessage::new(UserId::new(state.send_to), message))
                     .await
                     .unwrap();
             }
-            state.save(name);
+            state.save(user_id, pin);
         }
 
         *(LAST_UPDATE_TIME.write().await) = Instant::now();
@@ -87,4 +80,16 @@ async fn get_rss(state: &mut RssState) -> Result<Vec<RssNotification>, Box<dyn s
     }
 
     Ok(result)
+}
+
+pub async fn get_last_post(
+    state: &RssState,
+) -> Result<RssNotification, Box<dyn std::error::Error>> {
+    let bytes = reqwest::get(&state.url).await?.bytes().await?;
+    let rss = rss::Channel::read_from(&bytes[..])?;
+    let post = rss
+        .items
+        .first()
+        .ok_or_else(|| String::from("No posts found"))?;
+    Ok(RssNotification::new(&post))
 }

@@ -1,21 +1,8 @@
-use std::fs::File;
+mod notification;
+mod state;
 
-#[derive(Debug)]
-pub struct RssNotification {
-    pub title: String,
-    pub url: String,
-    pub content: String,
-}
-
-impl RssNotification {
-    pub fn new(item: &rss::Item) -> Self {
-        Self {
-            title: item.title.clone().unwrap_or_else(String::new),
-            url: item.link.clone().unwrap_or_else(String::new),
-            content: item.description.clone().unwrap_or_else(String::new),
-        }
-    }
-}
+pub use self::notification::RssNotification;
+pub use self::state::RssState;
 
 pub fn get_user_id_and_pin_from_name(name: &str) -> Option<(i64, u16)> {
     let prefix = name.strip_suffix(".json")?;
@@ -24,15 +11,6 @@ pub fn get_user_id_and_pin_from_name(name: &str) -> Option<(i64, u16)> {
     let user_id = user_id.parse().ok()?;
     let pin = pin[1..].parse().ok()?;
     Some((user_id, pin))
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
-pub struct RssState {
-    pub url: String,
-    pub unique_by: UniqueBy,
-    pub extract_content: ExtractContent,
-    pub last_post: Option<String>,
-    pub send_to: i64,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Debug)]
@@ -79,17 +57,5 @@ impl UniqueBy {
                 .unwrap_or("unknown"),
             UniqueBy::Link => item.link.as_deref().unwrap_or("unknown"),
         }
-    }
-}
-
-impl RssState {
-    pub fn load(filename: &str) -> Option<Self> {
-        let mut file = File::open(format!("sources/{}", filename)).ok()?;
-        serde_json::from_reader(&mut file).ok()
-    }
-
-    pub fn save(&self, filename: &str) {
-        let mut file = File::create(format!("sources/{}", filename)).unwrap();
-        serde_json::to_writer_pretty(&mut file, &self).unwrap();
     }
 }

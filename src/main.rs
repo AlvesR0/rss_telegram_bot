@@ -1,7 +1,7 @@
 use futures::stream::StreamExt;
 use rand::{thread_rng, Rng};
 use std::fs::read_dir;
-use telegram_bot::*;
+use telegram_bot::{Api, MessageKind, SendMessage, UpdateKind, User};
 
 mod background;
 mod data;
@@ -38,20 +38,30 @@ async fn reply(message: &str, sender: &User) -> String {
         .position(|c| c == ' ')
         .unwrap_or(message.len());
     let (left, right) = message.split_at(space_index);
+    let right = right.trim();
+    /* commands to botfather:
+    add - Add a new rss feed. Will return a random PIN number.
+    list - List all RSS feeds and their PINs
+    status - Get the status of the RSS feed
+    show - Get the last post of the RSS feed
+    edit - Edit how the RSS feed is handled
+    delete - Delete the RSS feed
+    */
     match left.to_ascii_lowercase().as_str() {
         "/start" => "Hello! Add rss feeds by typing /add <url>".to_owned(),
         "/add" => add(sender, right),
-        "/status" => status(sender, right),
+        "/status" => status(sender, right).await,
         "/list" => list(sender).await,
         "/edit" => edit(sender, right).await,
         "/delete" => delete(sender, right),
+        "/show" => show(sender, right).await,
         _ => "Unknown command.\nyou can list your rss feeds by typing /list.\nYou can add a new rss feed by typing /add <RSS url>".to_owned()
     }
 }
 
 fn add(sender: &User, url: &str) -> String {
-    let id: i64 = sender.id.into();
-    let pin: i64 = thread_rng().gen_range(1111..=9999);
+    let id = sender.id.into();
+    let pin = thread_rng().gen_range(1111..=9999);
     let state = RssState {
         url: url.to_string(),
         send_to: id,
@@ -59,7 +69,7 @@ fn add(sender: &User, url: &str) -> String {
         last_post: None,
         unique_by: UniqueBy::Link,
     };
-    state.save(&format!("{}-{}.json", id, pin));
+    state.save(id, pin);
     format!(
         "Added {url} with pin {pin}. Type /status {pin} for more information.",
         url = url,
@@ -67,18 +77,22 @@ fn add(sender: &User, url: &str) -> String {
     )
 }
 
-fn status(sender: &User, id: &str) -> String {
+async fn status(sender: &User, id: &str) -> String {
     let pin = match id.parse() {
         Ok(pin) => pin,
         Err(_e) => return "Usage: /status <PIN>\nYou can get the PIN by typing /list".to_string(),
     };
 
-    status_pin(sender.id.into(), pin)
+    let mut status = status_pin(sender.id.into(), pin);
+    status += &format!(
+        "\nNext update in {}",
+        background::time_until_next_update().await
+    );
+    status
 }
 
 fn status_pin(user_id: i64, pin: u16) -> String {
-    let file_name = format!("{}-{}.json", user_id, pin);
-    if let Some(state) = RssState::load(&file_name) {
+    if let Some(state) = RssState::load(user_id, pin) {
         format!(
             "[{pin}] {url}\n - unique by {unique_by:?}\n - {content}\n",
             pin = pin,
@@ -94,21 +108,18 @@ fn status_pin(user_id: i64, pin: u16) -> String {
 async fn list(sender: &User) -> String {
     let mut result = String::new();
     let sender_id: i64 = sender.id.into();
-    println!("Listing feeds of user {}", sender_id);
     for file in read_dir("sources").unwrap() {
         let file = file.unwrap();
         let file_name = file.file_name();
         let file_name = file_name.to_str().unwrap();
-        println!("{:?}", file_name);
         if let Some((user_id, pin)) = data::get_user_id_and_pin_from_name(file_name) {
-            println!("  {} {}", user_id, pin);
             if sender_id == user_id {
                 result += &status_pin(user_id, pin);
             }
         }
     }
     result += &format!(
-        "Checking for updates in {:?}",
+        "Checking for updates in {}",
         background::time_until_next_update().await
     );
     result
@@ -128,9 +139,8 @@ async fn edit(sender: &User, right: &str) -> String {
         None => return "Usage: /edit <PIN> <unique|content> <args>".to_string(),
     };
     let user_id: i64 = sender.id.into();
-    let file_name = format!("{}-{}.json", user_id, pin);
 
-    let mut state = match RssState::load(&file_name) {
+    let mut state = match RssState::load(user_id, pin) {
         Some(state) => state,
         None => return "PIN not found. You can list all your feeds by typing /list".to_string(),
     };
@@ -159,13 +169,50 @@ async fn edit(sender: &User, right: &str) -> String {
         }
     }
 
-    state.save(&file_name);
+    state.save(user_id, pin);
     format!(
-        "Saved! Next update will be in {:?}",
+        "Saved! Next update will be in {}",
         background::time_until_next_update().await
     )
 }
 
-fn delete(_sender: &User, _id: &str) -> String {
-    "Not implemented".to_string()
+fn delete(sender: &User, id: &str) -> String {
+    let pin: u16 = match id.parse() {
+        Ok(pin) => pin,
+        Err(_) => return "Usage: /delete <PIN>".to_string(),
+    };
+    let user_id: i64 = sender.id.into();
+    if let Some(state) = RssState::load(user_id, pin) {
+        state.delete(user_id, pin);
+        format!(
+            "Deleted [{pin}] {url}. You won't get any more notifications.",
+            pin = pin,
+            url = state.url
+        )
+    } else {
+        "PIN not found. List all your feeds by typing /list".to_string()
+    }
+}
+
+async fn show(sender: &User, id: &str) -> String {
+    let user_id: i64 = sender.id.into();
+    let pin: u16 = match id.parse() {
+        Ok(pin) => pin,
+        Err(_) => return "Usage: /delete <PIN>".to_string(),
+    };
+    if let Some(state) = RssState::load(user_id, pin) {
+        match background::get_last_post(&state).await {
+            Ok(last_notification) => last_notification.format(pin, &state),
+            Err(e) => {
+                eprintln!("Could not load RSS feed {url}", url = state.url);
+                eprintln!("{:?}", e);
+                format!(
+                    "Could not RSS feed at {url}. Is the server available?",
+                    url = state.url
+                )
+            }
+        }
+    } else {
+        "PIN not found. List all your feeds by typing /list".to_string()
+    }
 }
