@@ -6,4 +6,5 @@ services:
         - .env
     volumes:
       - ./sources:/app/sources
+    restart: "always"
 

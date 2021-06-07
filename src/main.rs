@@ -14,25 +14,35 @@ async fn main() {
     let token = std::env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN not set");
     background::spawn(token.clone());
 
-    let api = Api::new(token);
+    loop {
+        let api = Api::new(&token);
 
-    // Fetch new updates via long poll method
-    let mut stream = api.stream();
-    while let Some(update) = stream.next().await {
-        // If the received update contains a new message...
-        let update = update.unwrap();
-        if let UpdateKind::Message(message) = update.kind {
-            if let MessageKind::Text { ref data, .. } = message.kind {
-                let reply_message = reply(data, &message.from).await;
-                if let Err(e) = api
-                    .send(SendMessage::new(&message.from, reply_message))
-                    .await
-                {
-                    eprintln!("Could not reply to user {:?}", message.from);
-                    eprintln!("{:?}", e);
+        // Fetch new updates via long poll method
+        let mut stream = api.stream();
+        while let Some(update) = stream.next().await {
+            // If the received update contains a new message...
+            let update = match update {
+                Ok(u) => u,
+                Err(e) => {
+                    eprintln!("Could not get telegram update: {:?}", e);
+                    break;
+                }
+            };
+            if let UpdateKind::Message(message) = update.kind {
+                if let MessageKind::Text { ref data, .. } = message.kind {
+                    let reply_message = reply(data, &message.from).await;
+                    if let Err(e) = api
+                        .send(SendMessage::new(&message.from, reply_message))
+                        .await
+                    {
+                        eprintln!("Could not reply to user {:?}", message.from);
+                        eprintln!("{:?}", e);
+                    }
                 }
             }
         }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        println!("Restarting...");
     }
 }
 
