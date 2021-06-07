@@ -11,6 +11,7 @@ pub use self::data::*;
 #[tokio::main]
 async fn main() {
     let _ = dotenv::dotenv();
+    pretty_env_logger::init();
     let token = std::env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN not set");
     background::spawn(token.clone());
 
