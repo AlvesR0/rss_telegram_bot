@@ -46,7 +46,7 @@ async fn notifier(token: String) {
             let notifications = match get_rss(&mut state).await {
                 Ok(notifications) => notifications,
                 Err(e) => {
-                    eprintln!("Could not load RSS feed at {}", state.url);
+                    eprintln!("{}-{}.json - Could not load RSS feed at {}", user_id, pin, state.url);
                     eprintln!("{:?}", e);
                     continue;
                 }
