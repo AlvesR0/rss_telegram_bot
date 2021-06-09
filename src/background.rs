@@ -46,7 +46,10 @@ async fn notifier(token: String) {
             let notifications = match get_rss(&mut state).await {
                 Ok(notifications) => notifications,
                 Err(e) => {
-                    eprintln!("{}-{}.json - Could not load RSS feed at {}", user_id, pin, state.url);
+                    eprintln!(
+                        "{}-{}.json - Could not load RSS feed at {}",
+                        user_id, pin, state.url
+                    );
                     eprintln!("{:?}", e);
                     continue;
                 }
@@ -102,5 +105,5 @@ pub async fn get_last_post(
         .items
         .first()
         .ok_or_else(|| String::from("No posts found"))?;
-    Ok(RssNotification::new(&post))
+    Ok(RssNotification::new(post))
 }
